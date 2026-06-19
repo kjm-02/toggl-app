@@ -4,7 +4,11 @@ function editUser() {
   fields.forEach((id) => {
     const el = document.getElementById(id);
     const value = el.innerText;
-    el.innerHTML = `<input type="text" value="${value}" />`;
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = value;
+    el.textContent = "";
+    el.appendChild(input);
   });
   
   document.getElementById("editBtn").style.display = "none";
@@ -29,7 +33,7 @@ async function saveUser() {
   fields.forEach((id) => {
     const value = document.querySelector(`#${id} input`).value;
     const el = document.getElementById(id);
-    el.innerHTML = value; // ← span相当（テキスト表示）
+    el.textContent = value; // ← span相当（テキスト表示）
   });
 
 
