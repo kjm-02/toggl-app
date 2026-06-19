@@ -71,7 +71,12 @@ async function editRow(button) {
     const cell = row.children[i];
     const currentValue = cell.innerText;
     if (i == 0 || i > 2) {
-      cell.innerHTML = `<input type="text" value="${currentValue}" style="width: 70%;" />`;
+      cell.innerHTML = "";
+      const input = document.createElement("input");
+      input.type = "text";
+      input.value = currentValue;
+      input.style.width = "70%";
+      cell.appendChild(input);
     } else if (i == 1) {
       cell.innerHTML = `
         <select class="project_name" onchange="updateWorkClassRow(this)"">
