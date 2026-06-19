@@ -61,7 +61,9 @@ function end() {
 }
 
 function getWorks(date) {
-  window.location.href=`/?date=${date}`
+  const url = new URL("/", window.location.origin);
+  url.searchParams.set("date", date);
+  window.location.href = url.toString();
 }
 
 async function editRow(button) {
