@@ -387,14 +387,12 @@ function fillGaps() {
     if (end && nextStart && end < nextStart) {
       let tr = document.createElement("tr");
 
-      tr.innerHTML = `
-        <td>事務作業</td>
-        <td>その他</td>
-        <td>管理</td>
-        <td>${end}</td>
-        <td>${nextStart}</td>
-        <td>${calcMinutes(end, nextStart)}</td>
-      `;
+      const values = ["事務作業", "その他", "管理", end, nextStart, String(calcMinutes(end, nextStart))];
+      values.forEach((value) => {
+        const td = document.createElement("td");
+        td.textContent = value;
+        tr.appendChild(td);
+      });
 
       newRows.push({ index: i + 1, element: tr });
     }
