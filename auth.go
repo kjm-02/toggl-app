@@ -75,14 +75,6 @@ func AccessTokenParse(c *gin.Context) {
 	session := sessions.Default(c)
 	access_token := session.Get("access_token").(string)
 
-	// トークン検証
-	authHeader := c.GetHeader("Authorization")
-
-	if !strings.HasPrefix(authHeader, "Bearer ") {
-		c.JSON(401, gin.H{"error": "invalid token"})
-		return
-	}
-
 	// JWKS取得
 	Domain := os.Getenv("AUTH0_DOMAIN")
 	jwksURL := "https://" + Domain + "/.well-known/jwks.json"
