@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>作業時間管理</title>
+  <link rel="stylesheet" href="static/style.css">
+</head>
+<body data-login="{{ .Is_login }}">
+
+<div class="header">
+  <h2>作業時間管理</h2>
+
+  {{ if .Is_login }}
+    <div class="header-buttons">
+      <a href="/user" class="btn user-btn">ユーザー情報</a>
+      <a href="/logout" class="btn logout-btn">ログアウト</a>
+    </div>
+  {{ else }}
+    <a href="/login">
+      <button class="login-btn">ログイン</button>
+    </a>
+  {{ end }}
+</div>
+
+<input type="date" id="date" value="{{ .Date }}"> <br>
+<input type="text" id="task" placeholder="作業内容">
+<select id="project_name" onchange="updateWorkClass()">
+  <option disabled selected hidden>プロジェクト名を選択</option>
+  <option value="idkiban">ID基盤開発・運用</option>
+  <option value="umidasu">生み出す会議</option>
+  <option value="sonota">その他</option>
+</select>
+<select id="work_class">
+  <option disabled selected hidden>作業区分を選択</option>
+</select>
+<button onclick="start()">開始</button>
+<button onclick="end()">終了</button> <br>
+<button onclick="lunch()">昼休み</button>
+<button onclick="dailyScrum()">デイリースクラム</button>
+<button onclick="afternoonAssembly()">昼礼</button>
+
+<table>
+  <thead>
+    <tr>
+      <th>作業内容</th>
+      <th>プロジェクト名</th>
+      <th>作業区分</th>
+      <th>開始</th>
+      <th>終了</th>
+      <th>時間（分）</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{ range .Works }}
+    <tr data-id="{{ .Work_id }}" onclick="copyRow(this)">
+      <td>{{ .Task_name }}</td>
+      <td>{{ .Project_name }}</td>
+      <td>{{ .Work_class }}</td>
+      <td>{{ .Start_time }}</td>
+      <td>{{ .End_time }}</td>
+      <td>{{ .Diff_minute }}</td>
+      <td><button onclick=editRow(this)>編集</button></td>
+    </tr>
+    {{ end }}
+
+    <tr>
+      <td>合計</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td>{{ .Sum }}</td>
+    </tr>
+  </tbody>
+</table>
+
+<button onclick="fillGaps()">空きを埋める</button>
+
+<div class="copy-box">
+  <textarea rows="20" id="copyText">
+{{replace .Date "-" "/"}} 業務終了
+・業務内容
+{{- range .Summaries }}
+  {{- if ne .Task_name "昼休み" }}
+  ・[{{ .Project_name }}]<{{ .Work_class }}> {{ .Task_name }}: {{ .Total_minute }}分
+  {{- end }}
+{{- end }}
+・業務連絡
+  ・なし
+  </textarea>
+  <button onclick="copyText()">コピー</button>
+</div>
+
+<div id="toast-container"></div>
+
+<script>
+</script>
+
+<script src="./static/script.js"></script>
+
+</body>
+</html>
