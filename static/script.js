@@ -1,4 +1,4 @@
-const ip_address = "http://localhost:3000"
+const ip_address = "http://10.124.14.14:25578"
 
 // 未ログインの場合はどのボタンを押しても強制的にログイン画面へ
 const isLoggedIn = document.body.dataset.login === "true";
@@ -411,15 +411,12 @@ function fillGaps() {
     rows[item.index].parentNode.insertBefore(item.element, rows[item.index]);
   });
 
+  updateGapTotalRow();
   appendGapToTextarea();
 }
 
-function appendGapToTextarea() {
-  const textarea = document.getElementById("copyText");
-
-  let text = textarea.value;
+function getGapTotalMinutes() {
   let rows = document.querySelectorAll("tbody tr");
-
   let totalGapMinutes = 0;
 
   rows.forEach(row => {
@@ -433,6 +430,29 @@ function appendGapToTextarea() {
       totalGapMinutes += minutes;
     }
   });
+
+  return totalGapMinutes;
+}
+
+function updateGapTotalRow() {
+  const totalGapMinutes = getGapTotalMinutes();
+  const totalRow = document.querySelector("tbody tr:last-child");
+
+  if (!totalRow) return;
+
+  const totalCell = totalRow.children[5];
+  if (!totalCell) return;
+
+  const baseTotal = parseInt(totalCell.dataset.baseTotal || totalCell.innerText) || 0;
+  totalCell.dataset.baseTotal = String(baseTotal);
+  totalCell.innerText = String(baseTotal + totalGapMinutes);
+}
+
+function appendGapToTextarea() {
+  const textarea = document.getElementById("copyText");
+
+  let text = textarea.value;
+  let totalGapMinutes = getGapTotalMinutes();
 
   if (totalGapMinutes === 0) return;
 
