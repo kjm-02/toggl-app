@@ -1,3 +1,5 @@
+const ip_address = "http://localhost:3000"
+
 // 未ログインの場合はどのボタンを押しても強制的にログイン画面へ
 const isLoggedIn = document.body.dataset.login === "true";
 document.querySelectorAll("a, button").forEach(el => {
@@ -129,7 +131,7 @@ async function saveRow(button) {
     }
   }
   
-  await fetch(`http://localhost:3000/works/${id}`, {
+  await fetch(`${ip_address}/works/${id}`, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
@@ -152,7 +154,7 @@ async function deleteRow(button) {
   const row = button.closest("tr");
   const id = row.dataset.id;
   
-  await fetch(`http://localhost:3000/works/${id}`, {
+  await fetch(`${ip_address}/works/${id}`, {
     method: "DELETE",
     headers: {
       "Content-Type": "application/json",
@@ -171,7 +173,7 @@ async function startWork(date, time, task_name, project_name, work_class) {
   if (work_class === "作業区分を選択")
     work_class = ""
   try {
-    const response = await fetch ("http://localhost:3000/works/start", {
+    const response = await fetch (`${ip_address}/works/start`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -194,14 +196,14 @@ async function startWork(date, time, task_name, project_name, work_class) {
       return
     }
     getWorks(date)
-  } catch {
-    showToast('想定外のエラー', "error")
+  } catch (e){
+    showToast('想定外のエラー', e)
   }
 }
 
 async function endWork(date, time) {
   try {
-    const response = await fetch ("http://localhost:3000/works/end", {
+    const response = await fetch (`${ip_address}/works/end`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -448,7 +450,7 @@ async function postToTeams() {
   const textarea = document.getElementById("copyText");
   let text = textarea.value;
   try {
-    const response = await fetch ("http://localhost:3000/msgraph/teams", {
+    const response = await fetch (`${ip_address}/msgraph/teams`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

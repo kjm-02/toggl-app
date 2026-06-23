@@ -116,6 +116,7 @@ func CallbackHandler(auth *Authenticator, r RealRepo) gin.HandlerFunc {
 			},
 			oauth.IDTokenValidationOptions{},
 		)
+
 		if err != nil {
 			c.String(401, "Failed to exchange authorization code for token")
 			return

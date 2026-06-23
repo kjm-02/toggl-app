@@ -140,6 +140,16 @@ func (r RealRepo) CreateWork(auth0_id string, req reportRequestBody) error {
 	}
 	defer tx.Rollback()
 
+	_, err = tx.Exec(`
+		DELETE dr
+		FROM dailyreports dr
+		WHERE dr.auth0_id = ?
+			AND dr.report_date < DATE_SUB(?, INTERVAL 1 MONTH)
+	`, auth0_id, req.Date)
+	if err != nil {
+		return fmt.Errorf("delete old dailyreports: %w", err)
+	}
+
 	// DailyReportsにあるならそのidを取得、ないなら新規追加
 	_, err = tx.Exec(`
     INSERT INTO dailyreports (auth0_id, report_date, remarks)
