@@ -1,4 +1,4 @@
-const ip_address = "http://10.124.14.14:25578"
+const ip_address = "http://localhost:3000"
 
 // 未ログインの場合はどのボタンを押しても強制的にログイン画面へ
 const isLoggedIn = document.body.dataset.login === "true";
@@ -49,10 +49,12 @@ async function start() {
   const project_name = select.options[select.selectedIndex].text;
   select = document.getElementById("work_class");
   const work_class = select.options[select.selectedIndex].text;
+  const start_time = document.getElementById("start_time");
+  const end_time = document.getElementById("end_time");
 
-  currentStart = new Date();
-  await endWork(date, formatTime(currentStart)) // 開始の後に開始を押したら、自動で終了するようにする
-  await startWork(date, formatTime(currentStart), task_name, project_name, work_class)
+  currentTime = new Date();
+  await endWork(date, formatTime(currentTime)) // 開始の後に開始を押したら、自動で終了するようにする
+  await startWork(date, formatTime(currentTime), task_name, project_name, work_class)
 }
 
 function end() {
@@ -60,6 +62,20 @@ function end() {
   const task_name = document.getElementById("task").value
   currentStart = new Date();
   endWork(date, formatTime(currentStart))
+}
+
+async function resister() {
+  const date = document.getElementById("date").value
+  const task_name = document.getElementById("task").value
+  let select = document.getElementById("project_name");
+  const project_name = select.options[select.selectedIndex].text;
+  select = document.getElementById("work_class");
+  const work_class = select.options[select.selectedIndex].text;
+  const start_time = document.getElementById("start_time").value;
+  const end_time = document.getElementById("end_time").value;
+
+  await startWork(date, start_time, task_name, project_name, work_class)
+  await endWork(date, end_time) // 開始の後に開始を押したら、自動で終了するようにする
 }
 
 function getWorks(date) {
@@ -91,6 +107,7 @@ async function editRow(button) {
         </select>
       `;
     } else if (i == 2) {
+      previousWorkClass = currentValue
       cell.innerHTML = `
         <select class="work_class">
           <option disabled selected hidden>作業区分を選択</option>
@@ -98,9 +115,19 @@ async function editRow(button) {
       `;
     }
   }
+
   const select = row.querySelector(".project_name");
   if (select) {
     updateWorkClassRow(select);
+    // 現在の値を入れる
+    const workSelect = row.querySelector(".work_class");
+    if (workSelect) {
+      Array.from(workSelect.options).forEach(opt => {
+        if (opt.textContent === previousWorkClass) {
+          opt.selected = true;
+        }
+      });
+    }
   }
 
   const actionCell = row.children[6];
@@ -114,7 +141,6 @@ async function editRow(button) {
 async function saveRow(button) {
   const row = button.closest("tr");
   const id = row.dataset.id;
-  console.log(id)
 
   let newValues = []
   for (let i = 0; i < 5; i++) {
@@ -167,7 +193,6 @@ async function deleteRow(button) {
 }
 
 async function startWork(date, time, task_name, project_name, work_class) {
-  console.log(project_name, work_class)
   if (project_name === "プロジェクト名を選択")
     project_name = ""
   if (work_class === "作業区分を選択")

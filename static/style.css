@@ -50,6 +50,11 @@ button:nth-of-type(2) {
   color: white;
 }
 
+button:nth-of-type(3) {
+  background: #0fcf6f;
+  color: white;
+}
+
 /* テーブル */
 table {
   width: 100%;
