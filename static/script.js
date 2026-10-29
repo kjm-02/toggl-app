@@ -1,4 +1,5 @@
-const ip_address = "http://localhost:3000"
+const ip_address = window.location.origin
+let workActionInProgress = false;
 
 // 未ログインの場合はどのボタンを押しても強制的にログイン画面へ
 const isLoggedIn = document.body.dataset.login === "true";
@@ -35,7 +36,34 @@ function showToast(message, type = "default") {
 }
 
 function formatTime(date) {
-  return date.toLocaleTimeString();
+  return [date.getHours(), date.getMinutes(), date.getSeconds()]
+    .map(value => String(value).padStart(2, "0")).join(":");
+}
+
+async function workRequest(path, options) {
+  const response = await fetch(`${ip_address}${path}`, options);
+  if (!response.ok) {
+    const result = await response.json();
+    throw new Error(result.error || `HTTP Error: ${response.status}`);
+  }
+}
+
+async function runWorkAction(action) {
+  if (!isLoggedIn) {
+    window.location.href = "/login";
+    return;
+  }
+  if (workActionInProgress) return;
+  workActionInProgress = true;
+  const date = document.getElementById("date").value;
+  try {
+    await action(date);
+    getWorks(date);
+  } catch (error) {
+    showToast(error.message, "error");
+  } finally {
+    workActionInProgress = false;
+  }
 }
 
 async function login() {
@@ -43,39 +71,34 @@ async function login() {
 }
 
 async function start() {
-  const date = document.getElementById("date").value
-  const task_name = document.getElementById("task").value
-  let select = document.getElementById("project_name");
-  const project_name = select.options[select.selectedIndex].text;
-  select = document.getElementById("work_class");
-  const work_class = select.options[select.selectedIndex].text;
-  const start_time = document.getElementById("start_time");
-  const end_time = document.getElementById("end_time");
-
-  currentTime = new Date();
-  await endWork(date, formatTime(currentTime)) // 開始の後に開始を押したら、自動で終了するようにする
-  await startWork(date, formatTime(currentTime), task_name, project_name, work_class)
+  return runWorkAction(async (date) => {
+    const task_name = document.getElementById("task").value
+    let select = document.getElementById("project_name");
+    const project_name = select.options[select.selectedIndex].text;
+    select = document.getElementById("work_class");
+    const work_class = select.options[select.selectedIndex].text;
+    const currentTime = new Date();
+    await endWork(date, formatTime(currentTime)) // 開始の後に開始を押したら、自動で終了するようにする
+    await startWork(date, formatTime(currentTime), task_name, project_name, work_class)
+  });
 }
 
-function end() {
-  const date = document.getElementById("date").value
-  const task_name = document.getElementById("task").value
-  currentStart = new Date();
-  endWork(date, formatTime(currentStart))
+async function end() {
+  return runWorkAction(date => endWork(date, formatTime(new Date())));
 }
 
 async function resister() {
-  const date = document.getElementById("date").value
-  const task_name = document.getElementById("task").value
-  let select = document.getElementById("project_name");
-  const project_name = select.options[select.selectedIndex].text;
-  select = document.getElementById("work_class");
-  const work_class = select.options[select.selectedIndex].text;
-  const start_time = document.getElementById("start_time").value;
-  const end_time = document.getElementById("end_time").value;
+  return runWorkAction(async (date) => {
+    const task_name = document.getElementById("task").value
+    let select = document.getElementById("project_name");
+    const project_name = select.options[select.selectedIndex].text;
+    select = document.getElementById("work_class");
+    const work_class = select.options[select.selectedIndex].text;
+    const start_time = document.getElementById("start_time").value;
+    const end_time = document.getElementById("end_time").value;
 
-  await startWork(date, start_time, task_name, project_name, work_class)
-  await endWork(date, end_time) // 開始の後に開始を押したら、自動で終了するようにする
+    await startWork(date, start_time, task_name, project_name, work_class, end_time)
+  });
 }
 
 function getWorks(date) {
@@ -139,141 +162,113 @@ async function editRow(button) {
 }
 
 async function saveRow(button) {
-  const row = button.closest("tr");
-  const id = row.dataset.id;
+  return runWorkAction(async () => {
+    const row = button.closest("tr");
+    const id = row.dataset.id;
 
-  let newValues = []
-  for (let i = 0; i < 5; i++) {
-    if (i == 0 || i > 2) {
-      const input = row.children[i].querySelector("input");
-      newValues[i] = input.value;
-      row.children[i].innerText = newValues[i];
-    } else if (i == 1) {
-      newValues[i] = row.querySelector(".project_name").options[row.querySelector(".project_name").selectedIndex].text
-      row.children[i].innerText = newValues[i];
-    } else if (i == 2) {
-      newValues[i] = row.querySelector(".work_class")?.options?.[row.querySelector(".work_class")?.selectedIndex]?.text ?? "";
-      row.children[i].innerText = newValues[i];
+    let newValues = []
+    for (let i = 0; i < 5; i++) {
+      if (i == 0 || i > 2) {
+        const input = row.children[i].querySelector("input");
+        newValues[i] = input.value;
+      } else if (i == 1) {
+        newValues[i] = row.querySelector(".project_name").options[row.querySelector(".project_name").selectedIndex].text
+      } else if (i == 2) {
+        newValues[i] = row.querySelector(".work_class")?.options?.[row.querySelector(".work_class")?.selectedIndex]?.text ?? "";
+      }
     }
-  }
-  
-  await fetch(`${ip_address}/works/${id}`, {
-    method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      "task_name": newValues[0],
-      "project_name": newValues[1],
-      "work_class": newValues[2],
-      "start_time": newValues[3],
-      "end_time": newValues[4],
-    })
-  });
 
-  const actionCell = row.children[6];
-  actionCell.innerHTML = `<button onclick="editRow(this)">編集</button>`;
-  getWorks(document.getElementById('date').value)
+    await workRequest(`/works/${id}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        "task_name": newValues[0],
+        "project_name": newValues[1],
+        "work_class": newValues[2],
+        "start_time": newValues[3],
+        "end_time": newValues[4],
+      })
+    });
+  });
 }
 
 async function deleteRow(button) {
-  const row = button.closest("tr");
-  const id = row.dataset.id;
-  
-  await fetch(`${ip_address}/works/${id}`, {
-    method: "DELETE",
-    headers: {
-      "Content-Type": "application/json",
-    },
-  });
+  return runWorkAction(async () => {
+    const row = button.closest("tr");
+    const id = row.dataset.id;
 
-  const actionCell = row.children[4];
-  actionCell.innerHTML = `<button onclick="editRow(this)">編集</button>`;
-  getWorks(document.getElementById('date').value)
+    await workRequest(`/works/${id}`, {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+  });
 }
 
-async function startWork(date, time, task_name, project_name, work_class) {
+async function startWork(date, time, task_name, project_name, work_class, endTime = "") {
   if (project_name === "プロジェクト名を選択")
     project_name = ""
   if (work_class === "作業区分を選択")
     work_class = ""
-  try {
-    const response = await fetch (`${ip_address}/works/start`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        "date": date,
-        "remarks": "今日の作業",
-        "works": {
-          "project_name": project_name,
-          "work_class": work_class,
-          "task_name": task_name,
-          "start_time": `${date} ${time}`,
-          "end_time": null,
-          "memo": "実装"
-        }
-      })
+  await workRequest("/works/start", {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      "date": date,
+      "remarks": "今日の作業",
+      "works": {
+        "project_name": project_name,
+        "work_class": work_class,
+        "task_name": task_name,
+        "start_time": `${date} ${time}`,
+        "end_time": endTime ? `${date} ${endTime}` : null,
+        "memo": "実装"
+      }
     })
-    if (!response.ok) {
-      showToast(`HTTP Error: ${response.status}`, "error")
-      return
-    }
-    getWorks(date)
-  } catch (e){
-    showToast('想定外のエラー', e)
-  }
+  })
 }
 
 async function endWork(date, time) {
-  try {
-    const response = await fetch (`${ip_address}/works/end`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        "date": date,
-        "remarks": "",
-        "works": {
-          "project_name": "",
-          "work_class": "",
-          "task_name": "",
-          "start_time": null,
-          "end_time": `${date} ${time}`,
-          "memo": ""
-        }
-      })
+  await workRequest("/works/end", {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      "date": date,
+      "remarks": "",
+      "works": {
+        "project_name": "",
+        "work_class": "",
+        "task_name": "",
+        "start_time": null,
+        "end_time": `${date} ${time}`,
+        "memo": ""
+      }
     })
-    if (!response.ok) {
-      showToast(`HTTP Error: ${response.status}`, "error")
-      return
-    }
-    getWorks(date)
-  } catch {
-    showToast("想定外のエラー", "error")
-  }
+  })
 }
 
 async function lunch() {
-  const date = document.getElementById("date").value
-  await startWork(date, "11:45:00", "昼休み", "", "")
-  await endWork(date, "12:45:00")
+  return runWorkAction(date =>
+    startWork(date, "11:45:00", "昼休み", "", "", "12:45:00"));
 }
 
 async function dailyScrum() {
-  const date = document.getElementById("date").value
-  await startWork(date, "11:00:00", "デイリースクラム", "ID基盤開発・運用", "開発作業")
-  await endWork(date, "11:30:00")
+  return runWorkAction(date =>
+    startWork(date, "11:00:00", "デイリースクラム", "ID基盤開発・運用", "開発作業", "11:30:00"));
 }
 
 async function afternoonAssembly() {
-  const date = document.getElementById("date").value
-  await endWork(date, "13:00:00") // 今作業中のものがあれば強制的に終わらせる
-  await startWork(date, "13:00:00", "昼礼", "その他", "管理")
-  await endWork(date, "13:15:00")
-  getWorks(date)
+  return runWorkAction(async (date) => {
+    await endWork(date, "13:00:00") // 今作業中のものがあれば強制的に終わらせる
+    await startWork(date, "13:00:00", "昼礼", "その他", "管理", "13:15:00")
+  });
 }
 
 document.getElementById("date").addEventListener("change", (e) => {

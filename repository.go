@@ -165,6 +165,9 @@ func (r RealRepo) CreateWork(auth0_id string, req reportRequestBody) error {
 
 	var report_id int
 	err = tx.QueryRow("SELECT LAST_INSERT_ID()").Scan(&report_id)
+	if err != nil {
+		return fmt.Errorf("get report ID: %w", err)
+	}
 
 	// 開始を押したとき、まだendしてないもの（end_time=NULL）があればエラー
 	var count int
@@ -174,6 +177,9 @@ func (r RealRepo) CreateWork(auth0_id string, req reportRequestBody) error {
 		JOIN dailyreports d ON w.report_id = d.report_id
     WHERE w.end_time IS NULL AND d.auth0_id = ?
 	`, auth0_id).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("check active works: %w", err)
+	}
 
 	if count > 0 {
 		return fmt.Errorf("すでに作業中です")
@@ -199,6 +205,9 @@ func (r RealRepo) CreateWork(auth0_id string, req reportRequestBody) error {
 		end_time,
 		req.Works.Memo,
 	)
+	if err != nil {
+		return fmt.Errorf("insert work: %w", err)
+	}
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("create works: %w", err)
@@ -223,13 +232,17 @@ func (r RealRepo) EndWork(auth0_id string, req reportRequestBody) error {
 }
 
 func (r RealRepo) UpdateWork(auth0_id string, req Works, work_id string) error {
+	var endTime *string
+	if req.End_time != "" {
+		endTime = &req.End_time
+	}
 	// report_idと紐づけてUPDATE
 	result, err := r.DB.Exec(`
 		UPDATE workentries w
-		JOIN dailyreports d ON w.report_id
+		JOIN dailyreports d ON w.report_id = d.report_id
 		SET project_name = ?, work_class = ?, task_name = ?, start_time = ?, end_time = ?
 		WHERE w.work_entry_id = ? AND d.auth0_id = ?	
-	`, req.Project_name, req.Work_class, req.Task_name, req.Start_time, req.End_time, work_id, auth0_id)
+	`, req.Project_name, req.Work_class, req.Task_name, req.Start_time, endTime, work_id, auth0_id)
 
 	if err != nil {
 		return fmt.Errorf("update works: %w", err)

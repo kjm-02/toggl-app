@@ -1,8 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -16,6 +19,87 @@ type StubRepo struct{}
 
 func (s StubRepo) GetWorks(auth0ID, date string) ([]Works, int, error) {
 	return []Works{}, 100, nil
+}
+
+type mutationTestRepo struct {
+	StubRepo
+	err     error
+	created reportRequestBody
+}
+
+func (r *mutationTestRepo) CreateWork(_ string, req reportRequestBody) error {
+	r.created = req
+	return r.err
+}
+
+func (r *mutationTestRepo) EndWork(_ string, _ reportRequestBody) error {
+	return r.err
+}
+
+func (r *mutationTestRepo) UpdateWork(_ string, _ Works, _ string) error {
+	return r.err
+}
+
+func (r *mutationTestRepo) DeleteWork(_ string, _ string) error {
+	return r.err
+}
+
+func TestWorkMutationHandlers(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tests := []struct {
+		name        string
+		method      string
+		path        string
+		handler     func(WorkWriter) gin.HandlerFunc
+		errorStatus int
+	}{
+		{"create", http.MethodPost, "/works/start", CreateWorkHandler, http.StatusBadRequest},
+		{"end", http.MethodPost, "/works/end", EndWorkHandler, http.StatusInternalServerError},
+		{"edit", http.MethodPatch, "/works/42", EditWorkHandler, http.StatusInternalServerError},
+		{"delete", http.MethodDelete, "/works/42", DeleteWorkHandler, http.StatusInternalServerError},
+	}
+	for _, tt := range tests {
+		for _, fail := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/fail=%v", tt.name, fail), func(t *testing.T) {
+				repo := &mutationTestRepo{}
+				wantStatus := http.StatusOK
+				if fail {
+					repo.err = fmt.Errorf("database error")
+					wantStatus = tt.errorStatus
+				}
+				r := gin.New()
+				r.Use(sessions.Sessions("test-session", cookie.NewStore([]byte("secret"))))
+				r.Use(func(c *gin.Context) { sessions.Default(c).Set("auth0_id", "user-123") })
+				r.Handle(tt.method, tt.path, tt.handler(repo))
+				body := `{"date":"2026-10-29","works":{"task_name":"昼礼","start_time":"2026-10-29 13:00:00","end_time":"2026-10-29 13:15:00"}}`
+				req := httptest.NewRequest(tt.method, tt.path, strings.NewReader(body))
+				req.Header.Set("Content-Type", "application/json")
+				w := httptest.NewRecorder()
+				r.ServeHTTP(w, req)
+				if w.Code != wantStatus {
+					t.Fatalf("status=%d, want %d: %s", w.Code, wantStatus, w.Body.String())
+				}
+				var response map[string]string
+				decoder := json.NewDecoder(w.Body)
+				if err := decoder.Decode(&response); err != nil {
+					t.Fatal(err)
+				}
+				if fail {
+					if response["error"] != "database error" || response["status"] != "" {
+						t.Fatalf("expected error response, got %v", response)
+					}
+				} else if response["status"] != "ok" {
+					t.Fatalf("expected success response, got %v", response)
+				}
+				if err := decoder.Decode(&response); err != io.EOF {
+					t.Fatalf("unexpected additional response: %v", err)
+				}
+				if tt.name == "create" && repo.created.Works.End_time != "2026-10-29 13:15:00" {
+					t.Fatalf("lost assembly end time: %+v", repo.created)
+				}
+			})
+		}
+	}
 }
 
 func (s StubRepo) GetSummary(auth0ID, date string) ([]WorkSummary, error) {

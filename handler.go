@@ -133,6 +133,9 @@ func CallbackHandler(auth *Authenticator, r RealRepo) gin.HandlerFunc {
 
 		// AccessTokenからsubを保存
 		AccessTokenParse(c)
+		if c.IsAborted() {
+			return
+		}
 		session.Set("profile", map[string]interface{}{
 			"nickname": userInfo.Nickname,
 			"name":     userInfo.Name,
@@ -184,6 +187,9 @@ func UserHandler(auth *Authenticator) gin.HandlerFunc {
 			}
 			// AccessTokenからsubを保存
 			AccessTokenParse(c)
+			if c.IsAborted() {
+				return
+			}
 		}
 
 		if err := session.Save(); err != nil {
@@ -319,6 +325,7 @@ func CreateWorkHandler(repo WorkWriter) gin.HandlerFunc {
 		err := repo.CreateWork(auth0_id, req)
 		if err != nil {
 			c.JSON(400, gin.H{"error": err.Error()})
+			return
 		}
 
 		c.JSON(200, gin.H{"status": "ok"})
@@ -340,7 +347,10 @@ func EndWorkHandler(repo WorkWriter) gin.HandlerFunc {
 			return
 		}
 
-		repo.EndWork(auth0_id, req)
+		if err := repo.EndWork(auth0_id, req); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(200, gin.H{"status": "ok"})
 	}
 }
@@ -361,7 +371,10 @@ func EditWorkHandler(repo WorkWriter) gin.HandlerFunc {
 			return
 		}
 
-		repo.UpdateWork(auth0_id, req, work_id)
+		if err := repo.UpdateWork(auth0_id, req, work_id); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(200, gin.H{"status": "ok"})
 	}
 }
@@ -373,7 +386,10 @@ func DeleteWorkHandler(repo WorkWriter) gin.HandlerFunc {
 		auth0_id := session.Get("auth0_id").(string)
 		work_id := c.Param("id")
 
-		repo.DeleteWork(auth0_id, work_id)
+		if err := repo.DeleteWork(auth0_id, work_id); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(200, gin.H{"status": "ok"})
 	}
 }

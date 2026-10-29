@@ -1,20 +1,19 @@
 package main
 
 import (
-	"log"
-	"strings"
-
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/auth0/go-auth0/v2/authentication"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 
-	//"github.com/golang-jwt/jwt/v4"
 	"github.com/lestrrat-go/jwx/v2/jwk"
 	"github.com/lestrrat-go/jwx/v2/jwt"
 )
@@ -33,6 +32,27 @@ func NewAuthenticator() (*Authenticator, error) {
 	clientID := os.Getenv("AUTH0_CLIENT_ID")
 	clientSecret := os.Getenv("AUTH0_CLIENT_SECRET")
 	callbackURL := os.Getenv("AUTH0_CALLBACK_URL")
+
+	for _, setting := range []struct {
+		name  string
+		value string
+	}{
+		{"AUTH0_DOMAIN", domain},
+		{"AUTH0_CLIENT_ID", clientID},
+		{"AUTH0_CLIENT_SECRET", clientSecret},
+		{"AUTH0_CALLBACK_URL", callbackURL},
+	} {
+		if strings.TrimSpace(setting.value) == "" {
+			return nil, fmt.Errorf("%s is required", setting.name)
+		}
+	}
+	if _, err := auth0Issuer(domain); err != nil {
+		return nil, err
+	}
+	callback, err := url.Parse(callbackURL)
+	if err != nil || callback.Host == "" || (callback.Scheme != "https" && callback.Scheme != "http") || callback.User != nil || callback.Fragment != "" {
+		return nil, fmt.Errorf("AUTH0_CALLBACK_URL must be an absolute HTTP or HTTPS URL without user info or fragment")
+	}
 
 	authClient, err := authentication.New(
 		context.Background(),
@@ -55,17 +75,14 @@ func NewAuthenticator() (*Authenticator, error) {
 // AuthorizationURL builds the /authorize URL to redirect users
 // to Auth0's Universal Login page.
 func (a *Authenticator) AuthorizationURL(state string) string {
-	u, _ := url.Parse("https://" + a.Domain + "/authorize")
+	u := url.URL{Scheme: "https", Host: a.Domain, Path: "/authorize"}
 	params := url.Values{
 		"response_type": {"code"},
 		"client_id":     {a.ClientID},
 		"redirect_uri":  {a.CallbackURL},
 		"scope":         {"openid profile email offline_access"},
 		"state":         {state},
-		"audience": {
-			"http://localhost:3000/",
-			//"https://dev-jwxo311negg64d1c.us.auth0.com/api/v2/",
-		},
+		"audience":      {auth0Audience()},
 	}
 	u.RawQuery = params.Encode()
 	return u.String()
@@ -73,76 +90,107 @@ func (a *Authenticator) AuthorizationURL(state string) string {
 
 func AccessTokenParse(c *gin.Context) {
 	session := sessions.Default(c)
-	access_token := session.Get("access_token").(string)
-
-	// JWKS取得
-	Domain := os.Getenv("AUTH0_DOMAIN")
-	jwksURL := "https://" + Domain + "/.well-known/jwks.json"
-	set, err := jwk.Fetch(context.Background(), jwksURL)
-
-	if err != nil {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "failed to fetch jwks"})
-		return
-	}
-
-	// JWT検証
-	token, err := jwt.Parse(
-		[]byte(access_token),
-		jwt.WithKeySet(set),
-		jwt.WithValidate(true),
-	)
-	if err != nil {
+	accessToken, ok := session.Get("access_token").(string)
+	if !ok || strings.TrimSpace(accessToken) == "" {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
 		return
 	}
-
-	// sub（ユーザーID）
-	sub, ok := token.Get("sub")
+	auth0ID, ok := accessTokenUserID(c, accessToken)
 	if !ok {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid claims"})
 		return
 	}
-	auth0_id := strings.Split(sub.(string), "|")[1]
-	session.Set("auth0_id", auth0_id)
+	session.Set("auth0_id", auth0ID)
 }
 
 func AccessTokenParseForAPI(c *gin.Context) {
-	authHeader := c.GetHeader("Authorization")
-
-	if !strings.HasPrefix(authHeader, "Bearer ") {
-		c.JSON(401, gin.H{"error": "invalid token"})
-		return
-	}
-	access_token := strings.TrimPrefix(authHeader, "Bearer ")
-
-	// JWKS取得
-	Domain := os.Getenv("AUTH0_DOMAIN")
-	jwksURL := "https://" + Domain + "/.well-known/jwks.json"
-	log.Println(jwksURL)
-	set, err := jwk.Fetch(context.Background(), jwksURL)
-
-	if err != nil {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "failed to fetch jwks"})
-		return
-	}
-
-	// JWT検証
-	token, err := jwt.Parse(
-		[]byte(access_token),
-		jwt.WithKeySet(set),
-		jwt.WithValidate(true),
-	)
-	if err != nil {
+	fields := strings.Fields(c.GetHeader("Authorization"))
+	if len(fields) != 2 || !strings.EqualFold(fields[0], "Bearer") {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
 		return
 	}
 
-	// sub（ユーザーID）
-	sub, ok := token.Get("sub")
+	auth0ID, ok := accessTokenUserID(c, fields[1])
 	if !ok {
-		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid claims"})
 		return
 	}
-	auth0_id := strings.Split(sub.(string), "|")[1]
-	c.Set("auth0_id", auth0_id)
+	c.Set("auth0_id", auth0ID)
+}
+
+func auth0Audience() string {
+	if audience := os.Getenv("AUTH0_AUDIENCE"); audience != "" {
+		return audience
+	}
+	return "http://localhost:3000/"
+}
+
+func auth0Issuer(domain string) (string, error) {
+	u := url.URL{Scheme: "https", Host: domain, Path: "/"}
+	parsed, err := url.Parse(u.String())
+	if err != nil || domain == "" || parsed.Host != domain || parsed.Hostname() == "" || parsed.User != nil || strings.ContainsAny(domain, "/?#@ \t\r\n") {
+		return "", fmt.Errorf("AUTH0_DOMAIN must be a hostname, optionally with a port, without a scheme or path")
+	}
+	return u.String(), nil
+}
+
+func accessTokenUserID(c *gin.Context, accessToken string) (string, bool) {
+	issuer, err := auth0Issuer(os.Getenv("AUTH0_DOMAIN"))
+	if err != nil {
+		log.Printf("Invalid authentication configuration: %v", err)
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "invalid authentication configuration"})
+		return "", false
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+	set, err := fetchJWKS(ctx, issuer+".well-known/jwks.json")
+	if err != nil {
+		log.Printf("Failed to fetch authentication keys: %v", err)
+		c.AbortWithStatusJSON(http.StatusBadGateway, gin.H{"error": "failed to fetch jwks"})
+		return "", false
+	}
+
+	auth0ID, err := parseAccessToken(accessToken, set, issuer, auth0Audience())
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+		return "", false
+	}
+	return auth0ID, true
+}
+
+func fetchJWKS(ctx context.Context, endpoint string) (jwk.Set, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("JWKS endpoint returned HTTP %d", resp.StatusCode)
+	}
+	return jwk.ParseReader(resp.Body)
+}
+
+func parseAccessToken(accessToken string, set jwk.Set, issuer, audience string) (string, error) {
+	token, err := jwt.Parse(
+		[]byte(accessToken),
+		jwt.WithKeySet(set),
+		jwt.WithValidate(true),
+		jwt.WithIssuer(issuer),
+		jwt.WithAudience(audience),
+		jwt.WithRequiredClaim(jwt.ExpirationKey),
+		jwt.WithRequiredClaim(jwt.SubjectKey),
+	)
+	if err != nil {
+		return "", fmt.Errorf("validate access token: %w", err)
+	}
+
+	// Keep the provider-local ID used by existing database records.
+	provider, auth0ID, ok := strings.Cut(token.Subject(), "|")
+	if !ok || strings.TrimSpace(provider) == "" || strings.TrimSpace(auth0ID) == "" {
+		return "", fmt.Errorf("invalid subject claim")
+	}
+	return auth0ID, nil
 }
